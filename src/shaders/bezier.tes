@@ -1,0 +1,63 @@
+#version 410 core
+layout(quads, equal_spacing, cw) in;
+
+out vec3 FragPos;
+out vec3 Normal;
+
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+
+// https://www.scratchapixel.com/lessons/geometry/bezier-curve-rendering-utah-teapot/bezier-patch-normal.html
+void computeBernsteins(out float basis[4], out float basisDeriv[4], float t) {
+    float oneMinusT = (1.0 - t);
+    float oneMinusTSq = oneMinusT * oneMinusT;
+
+    basis[0] = oneMinusTSq * oneMinusT;
+    basis[1] = 3.0 * oneMinusTSq * t;
+    basis[2] = 3.0 * oneMinusT * t * t;
+    basis[3] = t * t * t;
+
+    basisDeriv[0] = -3.0 * oneMinusTSq;
+    basisDeriv[1] = -6.0 * t * oneMinusT + 3.0 * oneMinusTSq;
+    basisDeriv[2] = 6.0 * t * oneMinusT - 3.0 * t * t;
+    basisDeriv[3] = 3.0 * t * t;
+}
+
+void main() {
+    float u = gl_TessCoord.x;
+    float v = gl_TessCoord.y;
+
+    vec4 ctrlPts[16];
+    for (int idx = 0; idx < 16; idx++) {
+        ctrlPts[idx] = gl_in[idx].gl_Position;
+    }
+
+    float basisU[4], basisV[4];
+    float derivU[4], derivV[4];
+    computeBernsteins(basisU, derivU, u);
+    computeBernsteins(basisV, derivV, v);
+
+    vec4 surfacePos = vec4(0.0);
+    for (int row = 0; row < 4; row++) {
+        for (int col = 0; col < 4; col++) {
+            surfacePos += ctrlPts[row * 4 + col] * basisU[row] * basisV[col];
+        }
+    }
+
+    // Calculate tangent vectors in u and v directions
+    vec4 tangentU = vec4(0.0);
+    vec4 tangentV = vec4(0.0);
+    for (int row = 0; row < 4; row++) {
+        for (int col = 0; col < 4; col++) {
+            tangentU += ctrlPts[row * 4 + col] * derivU[row] * basisV[col];
+            tangentV += ctrlPts[row * 4 + col] * basisU[row] * derivV[col];
+        }
+    }
+
+    Normal = normalize(cross(tangentU.xyz, tangentV.xyz));
+
+    FragPos = vec3(model * vec4(surfacePos.xyz, 1.0));
+    Normal = normalize(mat3(transpose(inverse(model))) * Normal);
+    gl_Position = projection * view * model * vec4(surfacePos.xyz, 1.0);
+}
